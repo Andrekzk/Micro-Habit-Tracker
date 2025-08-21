@@ -95,14 +95,21 @@
 
   .meta { color: var(--muted); font-size: 12px; }
 
-  .table { margin-top: 14px; overflow: auto; }
-  table { width: 100%; border-collapse: collapse; min-width: 720px; }
+  .table { margin-top: 14px; overflow: visible; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   th, td { padding: 10px; text-align: left; border-bottom: 1px dotted rgba(255,255,255,.10); }
   th { font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-  tbody tr:hover { background: rgba(255,255,255,.03); }
+  /* column widths */
+  .habitCol{width:220px;}
+  .streakCol{width:80px;}
+  .pctCol{width:80px;}
+  .actCol{width:240px;}
+  td.actionCell{width:240px;}
+  td.daysCell{width:auto;}
+
   .nameCell { display:flex; align-items:center; gap:10px; }
   .swatch { width: 16px; height:16px; border-radius:4px; box-shadow: 0 0 0 2px rgba(0,0,0,.25) inset; }
-  .rowActions { display:flex; gap:6px; }
+  .rowActions { display:flex; gap:6px; flex-wrap: wrap; }
   .iconBtn { background: var(--surface); padding: 6px 8px; border-radius: 10px; font-size: 13px; }
 
   .streak { font-weight: 800; }
@@ -110,11 +117,12 @@
 
   .gridDays {
     display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 20px;
+    grid-template-columns: repeat(10, 20px);
     gap: 6px;
     align-items: center;
-    overflow-x: auto; padding: 4px 0;
+    width: 100%;
+    overflow: hidden;
+    padding: 4px 0;
   }
   .day { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; font-size: 13px;
     background: var(--surface-2); color: var(--muted); user-select: none; cursor: pointer;
@@ -128,10 +136,23 @@
   .legend { display:flex; gap:10px; align-items:center; margin-top: 8px; color: var(--muted); font-size: 12px; }
   .pill { padding: 4px 8px; border-radius: 999px; background: var(--surface); border:1px solid rgba(255,255,255,.08); }
 
-  .footer { margin-top: 16px; color: var(--muted); font-size: 12px; text-align: center; }
+  $1
+
+  /* Modal */
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); display: none; align-items: center; justify-content: center; padding: 24px; z-index: 50; }
+  .modal.show { display: flex; }
+  .modalCard { background: var(--card); border: 1px solid rgba(255,255,255,.08); border-radius: 16px; max-width: 900px; width: 100%; max-height: 85vh; overflow: hidden; box-shadow: var(--shadow); }
+  .modalHeader { display:flex; align-items:center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .modalBody { padding: 12px 16px; overflow: auto; }
+  .historyGrid { display: grid; grid-template-columns: repeat(14, 20px); gap: 6px; align-items: start; }
+  .closeBtn { background: var(--surface); }
+
 
   @media (max-width: 780px) {
     header { grid-template-columns: 1fr; }
+    .controls { justify-content: flex-start; }
+    table { min-width: 0; }
+  }
     .controls { justify-content: flex-start; }
     table { min-width: 640px; }
   }
@@ -172,11 +193,11 @@
       <table>
         <thead>
           <tr>
-            <th style="width:260px;">Habit</th>
-            <th>Streak</th>
-            <th>7d %</th>
-            <th>Last days</th>
-            <th>Actions</th>
+            <th class="habitCol">Habit</th>
+            <th class="streakCol">Streak</th>
+            <th class="pctCol">7d %</th>
+            <th class="daysCol">Last days</th>
+            <th class="actCol">Actions</th>
           </tr>
         </thead>
         <tbody id="habitBody"></tbody>
@@ -188,13 +209,33 @@
       </div>
     </section>
 
+    <div id="historyModal" class="modal" aria-hidden="true">
+      <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="histTitle">
+        <div class="modalHeader">
+          <div>
+            <strong id="histTitle">History</strong>
+            <div class="meta" id="histRange"></div>
+          </div>
+          <button id="histClose" class="iconBtn closeBtn" title="Close">✖</button>
+        </div>
+        <div class="modalBody">
+          <div class="legend" style="margin-bottom:8px;">
+            <span class="pill">✓ done</span>
+            <span class="pill">⏭ skip</span>
+            <span class="pill">◻ empty</span>
+          </div>
+          <div id="historyGrid" class="historyGrid"></div>
+        </div>
+      </div>
+    </div>
+
     <p class="footer">Your data is stored locally in your browser. Export regularly if it matters to you.</p>
   </main>
 
 <script>
 (() => {
   const MAX_HABITS = 7;
-  const DAYS_TO_SHOW = 21; // last N days
+  const DAYS_TO_SHOW = 10; // last N days
   const LS_KEY = 'microHabitDataV1';
 
   const els = {
@@ -205,6 +246,11 @@
     todayMeta: document.getElementById('todayMeta'),
     exportBtn: document.getElementById('exportBtn'),
     importFile: document.getElementById('importFile'),
+    histModal: document.getElementById('historyModal'),
+    histGrid: document.getElementById('historyGrid'),
+    histTitle: document.getElementById('histTitle'),
+    histRange: document.getElementById('histRange'),
+    histClose: document.getElementById('histClose'),
   };
 
   function fmtDate(d){
@@ -355,7 +401,7 @@
     const pTd = document.createElement('td'); pTd.textContent = percent7d(h) + '%'; tr.appendChild(pTd);
 
     // Days grid
-    const daysTd = document.createElement('td');
+    const daysTd = document.createElement('td'); daysTd.className='daysCell';
     const grid = document.createElement('div'); grid.className='gridDays';
     const days = daysBackArray(DAYS_TO_SHOW);
     days.forEach(d=>{
@@ -372,11 +418,12 @@
     daysTd.appendChild(grid); tr.appendChild(daysTd);
 
     // Actions
-    const act = document.createElement('td'); act.className='rowActions';
+    const act = document.createElement('td'); act.className='rowActions actionCell';
     act.appendChild(iconButton('✓ Today', ()=>setTodayDone(h.id)));
     act.appendChild(iconButton('⏭ Skip', ()=>setTodaySkip(h.id)));
     act.appendChild(iconButton('✏️ Rename', ()=>editHabit(h.id)));
     act.appendChild(iconButton('🎨 Color', ()=>recolorHabit(h.id)));
+    act.appendChild(iconButton('🕑 History', ()=>openHistory(h.id)));
     act.appendChild(iconButton('🗑️', ()=>deleteHabit(h.id), 'danger'));
     tr.appendChild(act);
 
@@ -401,6 +448,48 @@
   function iconButton(label, onClick, kind){
     const b = document.createElement('button'); b.className='iconBtn'+(kind? ' '+kind : ''); b.textContent = label; b.addEventListener('click', (e)=>{ e.stopPropagation(); onClick(); }); return b;
   }
+
+  // History modal helpers
+  function getEarliestDate(h){
+    const keys = Object.keys(h.history||{}).sort();
+    if(keys.length) return keys[0];
+    const d = new Date(); d.setDate(d.getDate()-180); return fmtDate(d); // default 6 months
+  }
+  function daysRange(fromISO, toISO){
+    const start = fromISO ? fromISO.split('-').map(Number) : null;
+    const end = toISO ? toISO.split('-').map(Number) : null;
+    const a = fromISO ? new Date(start[0], start[1]-1, start[2]) : new Date();
+    const b = toISO ? new Date(end[0], end[1]-1, end[2]) : new Date();
+    const res=[]; for(let d=new Date(a); d<=b; d.setDate(d.getDate()+1)){ res.push(fmtDate(d)); } return res;
+  }
+  function openHistory(id){
+    const h = state.habits.find(x=>x.id===id); if(!h) return;
+    els.histModal.dataset.habit = id;
+    els.histTitle.textContent = `${h.name} — history`;
+    const from = getEarliestDate(h); const to = todayStr();
+    const days = daysRange(from, to);
+    els.histRange.textContent = `${dayLabel(from)} → ${dayLabel(to)} • ${days.length} days`;
+    els.histGrid.innerHTML='';
+    days.forEach(d=>{
+      const cell = document.createElement('div'); cell.className='day';
+      const v=h.history[d]||''; if(v==='done'){ cell.classList.add('done'); cell.textContent='✓'; }
+      if(v==='skip'){ cell.classList.add('skip'); cell.textContent='⏭'; }
+      if(d===todayStr()) cell.classList.add('today');
+      cell.title = `${dayLabel(d)} — ${v||'no entry'}`;
+      cell.dataset.date=d; cell.addEventListener('click',()=>{ toggleCell(h.id,d); // re-render row & reflect here
+        const vv=h.history[d]||''; cell.className='day'; cell.textContent='';
+        if(vv==='done'){ cell.classList.add('done'); cell.textContent='✓'; }
+        if(vv==='skip'){ cell.classList.add('skip'); cell.textContent='⏭'; }
+        if(d===todayStr()) cell.classList.add('today');
+      });
+      els.histGrid.appendChild(cell);
+    });
+    els.histModal.classList.add('show');
+  }
+  function closeHistory(){ els.histModal.classList.remove('show'); }
+  els.histClose.addEventListener('click', closeHistory);
+  els.histModal.addEventListener('click', (e)=>{ if(e.target===els.histModal) closeHistory(); });
+  window.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeHistory(); });
 
   // Export / Import
   els.exportBtn.addEventListener('click', ()=>{
